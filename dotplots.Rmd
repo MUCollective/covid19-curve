@@ -1,0 +1,149 @@
+---
+title: "dotplots"
+output: github_document
+---
+
+## Libraries and setup
+
+```{r setup, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(cowplot)
+
+theme_set(theme_cowplot())
+```
+
+
+## Read in data
+
+Here are predictions from a simple model from [https://covidactnow.org/](https://covidactnow.org/) as of March 24:
+
+```{r data}
+df = read_csv("covid_act_now.csv", col_types = cols(
+  date = col_date(),
+  not_flattened = col_integer(),
+  flattened = col_integer(),
+  beds = col_integer()
+))
+
+df
+```
+
+And a long-format version for hospitalizations:
+
+```{r hosp}
+hosp = df %>%
+  pivot_longer(c(not_flattened, flattened), names_to = "model", values_to = "hospitalized") %>%
+  mutate(flattened = model == "flattened")
+
+hosp
+```
+
+
+## Area chart version
+
+Area chart version folks tend to use:
+
+```{r area_chart}
+hosp %>%
+  ggplot(aes(x = date)) +
+  geom_area(
+    aes(y = hospitalized, color = flattened, fill = flattened),
+    position = "identity", alpha = 0.5
+  ) +
+  geom_line(aes(y = beds), data = df)
+```
+
+
+## Dotplots
+
+Let's try to re-generate this using a frequency framing approach with dotplots. First we'll pick a dot size in terms of number of people:
+
+```{r people_per_dot}
+people_per_dot = 10000
+```
+
+Then we'll round counts accordingly:
+
+```{r make_dots}
+hosp_dots = hosp %>%
+  mutate(
+    # TODO: need a better solution for the very small numbers
+    hospitalized_dots = ceiling(hospitalized / people_per_dot),
+    dot_number = map(hospitalized_dots, ~ seq_len(.x))
+  ) %>%
+  unnest(dot_number) %>%
+  mutate(
+    has_a_bed = dot_number * people_per_dot < beds
+  )
+
+hosp_dots
+```
+
+Then we'll draw as dots:
+
+```{r dotplot_combined, fig.width = 6, fig.height = 4}
+bin_width = 2
+dodge_width = 3.5
+
+hosp_dots %>%
+  ggplot(aes(x = date)) +
+  geom_area(aes(y = beds), data = df, fill = "gray85") +
+  geom_dotplot(
+    aes(fill = flattened), color = NA, binwidth = bin_width, alpha = 0.5, 
+    position = position_dodge(width = dodge_width)
+  ) +
+  geom_dotplot(
+    aes(group = flattened), fill = "gray50", color = NA,
+    binwidth = bin_width,
+    position = position_dodge(width = dodge_width),
+    data = . %>% filter(has_a_bed)
+  ) +
+  annotate("text",
+    x = as.Date("2020-05-25"), y = max(df$beds) + 10000, 
+    label = "Has a bed", fontface = "bold", hjust = 0, vjust = 0,
+    color = "gray65"
+  ) +
+  annotate("text",
+    x = as.Date("2020-04-25"), y = max(df$flattened), 
+    label = "Doesn't have a bed", fontface = "bold", hjust = 0, vjust = 0,
+    color = "black"
+  ) +
+  scale_fill_brewer(palette = "Set1") +
+  # TODO: scaling of the area chart is slightly wrong here
+  # because of how dotplots work in ggplot, probably could
+  # manually lay out dots instead (wouldn't be hard using
+  # hosp_dots$dot_number)
+  scale_y_continuous(limits = c(0, max(hosp$hospitalized)))
+```
+
+Or the facetted version:
+
+```{r dotplot_faceted, fig.width = 6, fig.height = 8}
+hosp_dots %>%
+  ggplot(aes(x = date)) +
+  geom_area(aes(y = beds), data = hosp, fill = "gray85") +
+  geom_dotplot(
+    aes(fill = flattened), color = NA, binwidth = bin_width, alpha = 0.5, 
+    position = position_dodge(width = dodge_width)
+  ) +
+  geom_dotplot(
+    aes(group = flattened), fill = "gray50", color = NA,
+    binwidth = bin_width,
+    position = position_dodge(width = dodge_width),
+    data = . %>% filter(has_a_bed)
+  ) +
+  annotate("text",
+    x = as.Date("2020-05-25"), y = max(df$beds) + 10000, 
+    label = "Has a bed", fontface = "bold", hjust = 0, vjust = 0,
+    color = "gray65"
+  ) +
+  annotate("text",
+    x = as.Date("2020-04-25"), y = max(df$flattened), 
+    label = "Doesn't have a bed", fontface = "bold", hjust = 0, vjust = 0,
+    color = "black"
+  ) +
+  scale_fill_brewer(palette = "Set1", guide = FALSE) +
+  scale_y_continuous(limits = c(0, max(hosp$hospitalized))) +
+  facet_grid(flattened ~ .)
+```
+
