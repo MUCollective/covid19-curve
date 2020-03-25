@@ -157,7 +157,13 @@ hosp_dots %>%
   # because of how dotplots work in ggplot, probably could
   # manually lay out dots instead (wouldn't be hard using
   # hosp_dots$dot_number)
-  scale_y_continuous(limits = c(0, max(hosp$hospitalized)))
+  scale_y_continuous(limits = c(0, max(hosp$hospitalized))) +
+  labs(
+    title = "Hospitalized People over time",
+    subtitle = paste0("Each dot is ", people_per_dot, " people"),
+    y = NULL,
+    x = NULL
+  )
 ```
 
 ![](dotplots_files/figure-gfm/dotplot_combined-1.png)<!-- -->
@@ -190,6 +196,12 @@ hosp_dots %>%
   ) +
   scale_fill_brewer(palette = "Set1", guide = FALSE) +
   scale_y_continuous(limits = c(0, max(hosp$hospitalized))) +
+  labs(
+    title = "Hospitalized People over time",
+    subtitle = paste0("Each dot is ", people_per_dot, " people"),
+    y = NULL,
+    x = NULL
+  ) +
   facet_grid(flattened ~ .)
 ```
 
