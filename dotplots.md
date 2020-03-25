@@ -98,11 +98,11 @@ hosp_dots = hosp %>%
   mutate(
     # TODO: need a better solution for the very small numbers
     hospitalized_dots = ceiling(hospitalized / people_per_dot),
-    dot_number = map(hospitalized_dots, ~ seq_len(.x))
+    dot_number = map(hospitalized_dots, seq_len)
   ) %>%
   unnest(dot_number) %>%
   mutate(
-    has_a_bed = dot_number * people_per_dot < beds
+    has_a_bed = dot_number * people_per_dot <= beds
   )
 
 hosp_dots
@@ -206,3 +206,5 @@ hosp_dots %>%
 ```
 
 ![](dotplots_files/figure-gfm/dotplot_faceted-1.png)<!-- -->
+
+Could do a marginal icon array?
