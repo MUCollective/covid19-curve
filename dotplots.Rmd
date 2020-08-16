@@ -32,8 +32,11 @@ And a long-format version for hospitalizations:
 
 ```{r hosp}
 hosp = df %>%
-  pivot_longer(c(not_flattened, flattened), names_to = "model", values_to = "hospitalized") %>%
-  mutate(flattened = model == "flattened")
+  pivot_longer(c(-date, -beds), names_to = "model", values_to = "hospitalized") %>%
+  mutate(
+    flattened = model == "flattened",
+    model = fct_recode(model, `Not flattened` = "not_flattened", Flattened = "flattened")
+  )
 
 hosp
 ```
@@ -72,9 +75,17 @@ hosp_dots = hosp %>%
     dot_number = map(hospitalized_dots, seq_len)
   ) %>%
   unnest(dot_number) %>%
+  group_by(date, model) %>%
   mutate(
-    has_a_bed = dot_number * people_per_dot <= beds
-  )
+    # determine the number of people in this dot --- for the last
+    # dot in a group it will be the leftovers (so, not people_per_dot)
+    dot_people = ifelse(
+      dot_number == max(dot_number), hospitalized %% people_per_dot,
+      people_per_dot
+    ),
+    has_a_bed = cumsum(dot_people) <= beds
+  ) %>%
+  ungroup()
 
 hosp_dots
 ```
@@ -160,4 +171,50 @@ hosp_dots %>%
 ```
 
 Could do a marginal icon array?
+
+## Manual dot placement
+
+Manually placing the dots will give us finer-grained control than using the dotplot geom:
+
+```{r dotplot_manual, fig.width = 7, fig.height = 6}
+hosp_dots %>%
+  ggplot(aes(x = date)) +
+  geom_area(aes(y = beds), data = hosp, fill = "gray85") +
+  geom_point(
+    aes(y = dot_number * people_per_dot - people_per_dot/2, size = dot_people, color = flattened), 
+    alpha = 0.25,
+    data = . %>% filter(!has_a_bed)
+  ) +
+  geom_point(
+    aes(y = dot_number * people_per_dot - people_per_dot/2, size = dot_people), 
+    color = "gray65",
+    data = . %>% filter(has_a_bed)
+  ) +
+  coord_fixed(ratio = 4 / people_per_dot, expand = FALSE) +
+  scale_size_area(max_size = 3.5) +
+  scale_color_brewer(palette = "Set1") +
+  facet_grid(. ~ fct_rev(model)) + 
+  geom_vline(
+    xintercept = as.Date("2020-03-25"), 
+    color = "gray50", linetype = "dashed", size = .5
+  ) +
+  annotate("text",
+    x = as.Date("2020-05-25"), y = max(df$beds) + people_per_dot, 
+    label = "Has a bed", fontface = "bold", hjust = 0, vjust = 0,
+    color = "gray65"
+  ) +
+  annotate("text",
+    x = as.Date("2020-04-21"), y = max(df$flattened) + people_per_dot, 
+    label = "Doesn't have a bed", fontface = "bold", hjust = 0, vjust = 0,
+    color = "black"
+  ) +
+  guides(color = FALSE, size = FALSE) +
+  scale_y_continuous(labels = function(x) paste0(x / 1000, "k")) +
+  labs(
+    title = "People in the hospital at the same time",
+    subtitle = paste0("Each dot is ", people_per_dot/1000, "k people"),
+    y = NULL,
+    x = NULL
+  ) 
+```
 

@@ -45,25 +45,28 @@ And a long-format version for hospitalizations:
 
 ``` r
 hosp = df %>%
-  pivot_longer(c(not_flattened, flattened), names_to = "model", values_to = "hospitalized") %>%
-  mutate(flattened = model == "flattened")
+  pivot_longer(c(-date, -beds), names_to = "model", values_to = "hospitalized") %>%
+  mutate(
+    flattened = model == "flattened",
+    model = fct_recode(model, `Not flattened` = "not_flattened", Flattened = "flattened")
+  )
 
 hosp
 ```
 
     ## # A tibble: 58 x 5
     ##    date        beds model         hospitalized flattened
-    ##    <date>     <int> <chr>                <int> <lgl>    
-    ##  1 2020-03-07 21010 not_flattened           76 FALSE    
-    ##  2 2020-03-07 21010 flattened               76 TRUE     
-    ##  3 2020-03-11 21010 not_flattened          220 FALSE    
-    ##  4 2020-03-11 21010 flattened              220 TRUE     
-    ##  5 2020-03-15 21010 not_flattened          732 FALSE    
-    ##  6 2020-03-15 21010 flattened              732 TRUE     
-    ##  7 2020-03-19 22060 not_flattened         5360 FALSE    
-    ##  8 2020-03-19 22060 flattened             5361 TRUE     
-    ##  9 2020-03-23 23163 not_flattened        20769 FALSE    
-    ## 10 2020-03-23 23163 flattened            20775 TRUE     
+    ##    <date>     <int> <fct>                <int> <lgl>    
+    ##  1 2020-03-07 21010 Not flattened           76 FALSE    
+    ##  2 2020-03-07 21010 Flattened               76 TRUE     
+    ##  3 2020-03-11 21010 Not flattened          220 FALSE    
+    ##  4 2020-03-11 21010 Flattened              220 TRUE     
+    ##  5 2020-03-15 21010 Not flattened          732 FALSE    
+    ##  6 2020-03-15 21010 Flattened              732 TRUE     
+    ##  7 2020-03-19 22060 Not flattened         5360 FALSE    
+    ##  8 2020-03-19 22060 Flattened             5361 TRUE     
+    ##  9 2020-03-23 23163 Not flattened        20769 FALSE    
+    ## 10 2020-03-23 23163 Flattened            20775 TRUE     
     ## # ... with 48 more rows
 
 ## Area chart version
@@ -101,27 +104,36 @@ hosp_dots = hosp %>%
     dot_number = map(hospitalized_dots, seq_len)
   ) %>%
   unnest(dot_number) %>%
+  group_by(date, model) %>%
   mutate(
-    has_a_bed = dot_number * people_per_dot <= beds
-  )
+    # determine the number of people in this dot --- for the last
+    # dot in a group it will be the leftovers (so, not people_per_dot)
+    dot_people = ifelse(
+      dot_number == max(dot_number), hospitalized %% people_per_dot,
+      people_per_dot
+    ),
+    has_a_bed = cumsum(dot_people) <= beds
+  ) %>%
+  ungroup()
 
 hosp_dots
 ```
 
-    ## # A tibble: 276 x 8
+    ## # A tibble: 276 x 9
     ##    date        beds model hospitalized flattened hospitalized_do~ dot_number
-    ##    <date>     <int> <chr>        <int> <lgl>                <dbl>      <int>
-    ##  1 2020-03-07 21010 not_~           76 FALSE                    1          1
-    ##  2 2020-03-07 21010 flat~           76 TRUE                     1          1
-    ##  3 2020-03-11 21010 not_~          220 FALSE                    1          1
-    ##  4 2020-03-11 21010 flat~          220 TRUE                     1          1
-    ##  5 2020-03-15 21010 not_~          732 FALSE                    1          1
-    ##  6 2020-03-15 21010 flat~          732 TRUE                     1          1
-    ##  7 2020-03-19 22060 not_~         5360 FALSE                    1          1
-    ##  8 2020-03-19 22060 flat~         5361 TRUE                     1          1
-    ##  9 2020-03-23 23163 not_~        20769 FALSE                    3          1
-    ## 10 2020-03-23 23163 not_~        20769 FALSE                    3          2
-    ## # ... with 266 more rows, and 1 more variable: has_a_bed <lgl>
+    ##    <date>     <int> <fct>        <int> <lgl>                <dbl>      <int>
+    ##  1 2020-03-07 21010 Not ~           76 FALSE                    1          1
+    ##  2 2020-03-07 21010 Flat~           76 TRUE                     1          1
+    ##  3 2020-03-11 21010 Not ~          220 FALSE                    1          1
+    ##  4 2020-03-11 21010 Flat~          220 TRUE                     1          1
+    ##  5 2020-03-15 21010 Not ~          732 FALSE                    1          1
+    ##  6 2020-03-15 21010 Flat~          732 TRUE                     1          1
+    ##  7 2020-03-19 22060 Not ~         5360 FALSE                    1          1
+    ##  8 2020-03-19 22060 Flat~         5361 TRUE                     1          1
+    ##  9 2020-03-23 23163 Not ~        20769 FALSE                    3          1
+    ## 10 2020-03-23 23163 Not ~        20769 FALSE                    3          2
+    ## # ... with 266 more rows, and 2 more variables: dot_people <dbl>,
+    ## #   has_a_bed <lgl>
 
 Then we’ll draw as dots:
 
@@ -208,3 +220,52 @@ hosp_dots %>%
 ![](dotplots_files/figure-gfm/dotplot_faceted-1.png)<!-- -->
 
 Could do a marginal icon array?
+
+## Manual dot placement
+
+Manually placing the dots will give us finer-grained control than using
+the dotplot geom:
+
+``` r
+hosp_dots %>%
+  ggplot(aes(x = date)) +
+  geom_area(aes(y = beds), data = hosp, fill = "gray85") +
+  geom_point(
+    aes(y = dot_number * people_per_dot - people_per_dot/2, size = dot_people, color = flattened), 
+    alpha = 0.25,
+    data = . %>% filter(!has_a_bed)
+  ) +
+  geom_point(
+    aes(y = dot_number * people_per_dot - people_per_dot/2, size = dot_people), 
+    color = "gray65",
+    data = . %>% filter(has_a_bed)
+  ) +
+  coord_fixed(ratio = 4 / people_per_dot, expand = FALSE) +
+  scale_size_area(max_size = 3.5) +
+  scale_color_brewer(palette = "Set1") +
+  facet_grid(. ~ fct_rev(model)) + 
+  geom_vline(
+    xintercept = as.Date("2020-03-25"), 
+    color = "gray50", linetype = "dashed", size = .5
+  ) +
+  annotate("text",
+    x = as.Date("2020-05-25"), y = max(df$beds) + people_per_dot, 
+    label = "Has a bed", fontface = "bold", hjust = 0, vjust = 0,
+    color = "gray65"
+  ) +
+  annotate("text",
+    x = as.Date("2020-04-21"), y = max(df$flattened) + people_per_dot, 
+    label = "Doesn't have a bed", fontface = "bold", hjust = 0, vjust = 0,
+    color = "black"
+  ) +
+  guides(color = FALSE, size = FALSE) +
+  scale_y_continuous(labels = function(x) paste0(x / 1000, "k")) +
+  labs(
+    title = "People in the hospital at the same time",
+    subtitle = paste0("Each dot is ", people_per_dot/1000, "k people"),
+    y = NULL,
+    x = NULL
+  ) 
+```
+
+![](dotplots_files/figure-gfm/dotplot_manual-1.png)<!-- -->
